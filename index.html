@@ -72,6 +72,14 @@
             cursor: not-allowed;
         }
         
+        button.secondary {
+            background: #0f3460;
+        }
+        
+        button.secondary:active {
+            background: #0a2540;
+        }
+        
         #qrcode {
             background: white;
             padding: 20px;
@@ -82,7 +90,8 @@
             min-height: 280px;
         }
         
-        #qrcode canvas {
+        #qrcode canvas,
+        #qrcode img {
             max-width: 100% !important;
             height: auto !important;
         }
@@ -115,6 +124,11 @@
             background: #4caf50;
         }
         
+        .status.success {
+            background: #4caf50;
+            margin-top: 10px;
+        }
+        
         #scanArea {
             position: relative;
             width: 100%;
@@ -136,6 +150,31 @@
             border-radius: 5px;
             font-size: 14px;
             line-height: 1.5;
+            margin-top: 10px;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #0f3460;
+            background: #0a1929;
+            color: white;
+            font-size: 14px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        
+        .key-section {
+            margin-top: 15px;
+        }
+        
+        .or-divider {
+            text-align: center;
+            margin: 15px 0;
+            color: #666;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -158,6 +197,16 @@
             <div class="step-title">Покажите этот QR-код</div>
             <div id="qrcode"></div>
             <div class="status waiting">⏳ Ждём подключения...</div>
+            
+            <div class="or-divider">ИЛИ</div>
+            
+            <div class="key-section">
+                <button onclick="copyKey()" class="secondary">📋 Скопировать ключ</button>
+                <div id="copyStatus" class="status success hidden">✅ Ключ скопирован!</div>
+                <div class="info">
+                    💡 Если QR-код не появляется, нажмите кнопку выше и отправьте ключ любым способом (WhatsApp, Telegram и т.д.)
+                </div>
+            </div>
         </div>
         
         <!-- Шаг 3: Сканирование QR-кода (принимающий) -->
@@ -167,8 +216,20 @@
                 <video id="scanVideo" autoplay playsinline></video>
             </div>
             <canvas id="scanCanvas" class="hidden"></canvas>
+            <button onclick="stopScanAndShowInput()" class="secondary">⌨️ Ввести ключ вручную</button>
             <div class="info">
                 📱 Держите телефон ровно и поближе к экрану
+            </div>
+        </div>
+        
+        <!-- Шаг 3.5: Ввод ключа вручную -->
+        <div id="step3_5" class="step hidden">
+            <div class="step-title">Вставьте ключ</div>
+            <textarea id="keyInput" placeholder="Вставьте сюда ключ, полученный от звонящего..."></textarea>
+            <button onclick="processManualKey()">✅ Подключиться</button>
+            <button onclick="goBackToScan()" class="secondary">🔙 Назад к сканированию</button>
+            <div class="info">
+                💡 Вставьте ключ, который отправил вам звонящий
             </div>
         </div>
         
@@ -189,6 +250,7 @@
         let localStream = null;
         let role = null;
         let scanInterval = null;
+        let currentKey = null; // Хранение текущего ключа
 
         // Конфигурация WebRTC с публичными STUN серверами
         const config = {
@@ -203,9 +265,6 @@
             const qrDiv = document.getElementById(elementId);
             qrDiv.innerHTML = ''; // Очистить предыдущий контент
             
-            // Сжать данные для меньшего QR-кода
-            const compressed = btoa(text).substring(0, 800); // Ограничение размера
-            
             // Использовать API для генерации QR-кода
             const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&format=svg`;
             
@@ -214,11 +273,97 @@
             img.style.maxWidth = '100%';
             img.style.height = 'auto';
             img.onerror = function() {
-                // Если API не работает, показать текстовые данные
-                qrDiv.innerHTML = `<div style="color: black; padding: 20px; word-break: break-all; font-size: 10px; max-height: 250px; overflow-y: auto;">${text}</div>`;
+                // Если API не работает, показать сообщение
+                qrDiv.innerHTML = `<div style="color: #e94560; padding: 20px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
+                    <div>QR-код не загрузился</div>
+                    <div style="font-size: 14px; margin-top: 10px; color: #ffa500;">Используйте кнопку "Скопировать ключ" ниже</div>
+                </div>`;
             };
             
             qrDiv.appendChild(img);
+        }
+
+        // Скопировать ключ в буфер обмена
+        async function copyKey() {
+            if (!currentKey) {
+                alert('Ключ ещё не готов. Подождите немного...');
+                return;
+            }
+            
+            try {
+                await navigator.clipboard.writeText(currentKey);
+                
+                // Показать сообщение об успехе
+                const status = document.getElementById('copyStatus');
+                status.classList.remove('hidden');
+                
+                // Скрыть через 3 секунды
+                setTimeout(() => {
+                    status.classList.add('hidden');
+                }, 3000);
+                
+            } catch (err) {
+                // Фоллбэк для старых браузеров
+                const textArea = document.createElement("textarea");
+                textArea.value = currentKey;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.select();
+                
+                try {
+                    document.execCommand('copy');
+                    const status = document.getElementById('copyStatus');
+                    status.classList.remove('hidden');
+                    setTimeout(() => {
+                        status.classList.add('hidden');
+                    }, 3000);
+                } catch (err2) {
+                    alert('Не удалось скопировать. Попробуйте ещё раз.');
+                }
+                
+                document.body.removeChild(textArea);
+            }
+        }
+
+        // Остановить сканирование и показать ввод
+        function stopScanAndShowInput() {
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+            
+            const video = document.getElementById('scanVideo');
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            
+            showStep(3.5);
+        }
+
+        // Вернуться к сканированию
+        function goBackToScan() {
+            document.getElementById('keyInput').value = '';
+            startAsReceiver();
+        }
+
+        // Обработать введённый вручную ключ
+        function processManualKey() {
+            const key = document.getElementById('keyInput').value.trim();
+            
+            if (!key) {
+                alert('Пожалуйста, вставьте ключ');
+                return;
+            }
+            
+            try {
+                // Проверить, что это валидный JSON
+                JSON.parse(key);
+                handleScannedData(key);
+            } catch (e) {
+                alert('Неправильный формат ключа. Убедитесь, что вы скопировали весь ключ полностью.');
+            }
         }
 
         // Начать как звонящий
@@ -263,9 +408,11 @@
                 // Дождаться сбора всех ICE кандидатов
                 await waitForIceCandidates();
                 
+                // Сохранить ключ
+                currentKey = JSON.stringify(pc.localDescription);
+                
                 // Показать QR-код с предложением
-                const offerData = JSON.stringify(pc.localDescription);
-                generateQRCode(offerData, 'qrcode');
+                generateQRCode(currentKey, 'qrcode');
                 
             } catch (error) {
                 alert('Ошибка: ' + error.message);
@@ -295,6 +442,8 @@
             } catch (error) {
                 alert('Ошибка доступа к камере: ' + error.message);
                 console.error(error);
+                // Если камера недоступна, сразу показать ввод ключа
+                showStep(3.5);
             }
         }
 
@@ -374,14 +523,16 @@
                 // Дождаться сбора всех ICE кандидатов
                 await waitForIceCandidates();
                 
+                // Сохранить ключ
+                currentKey = JSON.stringify(pc.localDescription);
+                
                 // Показать QR-код с ответом
                 showStep(2);
                 document.querySelector('#step2 .step-title').textContent = 'Теперь покажите ЭТОТ QR-код';
-                const answerData = JSON.stringify(pc.localDescription);
-                generateQRCode(answerData, 'qrcode');
+                generateQRCode(currentKey, 'qrcode');
                 
             } catch (error) {
-                alert('Ошибка обработки QR-кода: ' + error.message);
+                alert('Ошибка обработки ключа: ' + error.message);
                 console.error(error);
             }
         }
@@ -426,28 +577,10 @@
                 scanInterval = null;
             }
             
+            currentKey = null;
             location.reload();
         }
 
         // Показать нужный шаг
         function showStep(stepNumber) {
-            for (let i = 1; i <= 4; i++) {
-                const step = document.getElementById('step' + i);
-                if (step) {
-                    if (i === stepNumber) {
-                        step.classList.remove('hidden');
-                    } else {
-                        step.classList.add('hidden');
-                    }
-                }
-            }
-        }
-
-        // Обработка ошибок
-        window.onerror = function(msg, url, lineNo, columnNo, error) {
-            console.error('Error:', msg, url, lineNo, columnNo, error);
-            return false;
-        };
-    </script>
-</body>
-</html>
+            const steps = [1, 2
