@@ -25,7 +25,7 @@
             text-align: center;
             font-size: 24px;
             margin: 10px 0;
-            color: #0f3460;
+            color: #e94560;
         }
         
         .container {
@@ -79,11 +79,10 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 250px;
+            min-height: 280px;
         }
         
-        #qrcode canvas,
-        #qrcode img {
+        #qrcode canvas {
             max-width: 100% !important;
             height: auto !important;
         }
@@ -96,7 +95,7 @@
         }
         
         .hidden {
-            display: none;
+            display: none !important;
         }
         
         .status {
@@ -182,9 +181,6 @@
         </div>
     </div>
 
-    <!-- QR Code библиотека -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    
     <!-- jsQR библиотека для сканирования -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
@@ -202,6 +198,29 @@
             ]
         };
 
+        // Упрощённая генерация QR-кода (используем API)
+        function generateQRCode(text, elementId) {
+            const qrDiv = document.getElementById(elementId);
+            qrDiv.innerHTML = ''; // Очистить предыдущий контент
+            
+            // Сжать данные для меньшего QR-кода
+            const compressed = btoa(text).substring(0, 800); // Ограничение размера
+            
+            // Использовать API для генерации QR-кода
+            const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&format=svg`;
+            
+            const img = document.createElement('img');
+            img.src = qrApiUrl;
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.onerror = function() {
+                // Если API не работает, показать текстовые данные
+                qrDiv.innerHTML = `<div style="color: black; padding: 20px; word-break: break-all; font-size: 10px; max-height: 250px; overflow-y: auto;">${text}</div>`;
+            };
+            
+            qrDiv.appendChild(img);
+        }
+
         // Начать как звонящий
         async function startAsCaller() {
             role = 'caller';
@@ -210,7 +229,7 @@
             try {
                 // Получить доступ к камере
                 localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user' }, 
+                    video: { facingMode: 'user', width: 640, height: 480 }, 
                     audio: true 
                 });
                 
@@ -229,6 +248,14 @@
                     showStep(4);
                 };
                 
+                // Обработка состояния подключения
+                pc.onconnectionstatechange = () => {
+                    console.log('Connection state:', pc.connectionState);
+                    if (pc.connectionState === 'connected') {
+                        showStep(4);
+                    }
+                };
+                
                 // Создать предложение
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
@@ -238,15 +265,11 @@
                 
                 // Показать QR-код с предложением
                 const offerData = JSON.stringify(pc.localDescription);
-                new QRCode(document.getElementById("qrcode"), {
-                    text: offerData,
-                    width: 256,
-                    height: 256,
-                    correctLevel: QRCode.CorrectLevel.L
-                });
+                generateQRCode(offerData, 'qrcode');
                 
             } catch (error) {
                 alert('Ошибка: ' + error.message);
+                console.error(error);
             }
         }
 
@@ -265,10 +288,13 @@
                 video.srcObject = stream;
                 
                 // Начать сканирование QR-кода
-                startScanning();
+                video.onloadedmetadata = () => {
+                    startScanning();
+                };
                 
             } catch (error) {
                 alert('Ошибка доступа к камере: ' + error.message);
+                console.error(error);
             }
         }
 
@@ -282,14 +308,17 @@
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const code = jsQR(imageData.data, imageData.width, imageData.height);
-                    
-                    if (code) {
-                        clearInterval(scanInterval);
-                        handleScannedData(code.data);
+                    if (canvas.width > 0 && canvas.height > 0) {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        
+                        if (code && code.data) {
+                            clearInterval(scanInterval);
+                            handleScannedData(code.data);
+                        }
                     }
                 }
             }, 300);
@@ -300,13 +329,15 @@
             try {
                 // Остановить камеру сканирования
                 const video = document.getElementById('scanVideo');
-                video.srcObject.getTracks().forEach(track => track.stop());
+                if (video.srcObject) {
+                    video.srcObject.getTracks().forEach(track => track.stop());
+                }
                 
                 const offer = JSON.parse(data);
                 
                 // Получить доступ к камере для видеозвонка
                 localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user' }, 
+                    video: { facingMode: 'user', width: 640, height: 480 }, 
                     audio: true 
                 });
                 
@@ -325,6 +356,14 @@
                     showStep(4);
                 };
                 
+                // Обработка состояния подключения
+                pc.onconnectionstatechange = () => {
+                    console.log('Connection state:', pc.connectionState);
+                    if (pc.connectionState === 'connected') {
+                        showStep(4);
+                    }
+                };
+                
                 // Установить удалённое описание
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 
@@ -337,24 +376,13 @@
                 
                 // Показать QR-код с ответом
                 showStep(2);
+                document.querySelector('#step2 .step-title').textContent = 'Теперь покажите ЭТОТ QR-код';
                 const answerData = JSON.stringify(pc.localDescription);
-                new QRCode(document.getElementById("qrcode"), {
-                    text: answerData,
-                    width: 256,
-                    height: 256,
-                    correctLevel: QRCode.CorrectLevel.L
-                });
-                
-                // Теперь ждём, когда первый абонент отсканирует наш ответ
-                // Для упрощения - автоматически переходим к видео через 5 сек
-                setTimeout(() => {
-                    if (pc.connectionState !== 'connected') {
-                        showStep(4);
-                    }
-                }, 5000);
+                generateQRCode(answerData, 'qrcode');
                 
             } catch (error) {
                 alert('Ошибка обработки QR-кода: ' + error.message);
+                console.error(error);
             }
         }
 
@@ -364,11 +392,19 @@
                 if (pc.iceGatheringState === 'complete') {
                     resolve();
                 } else {
-                    pc.addEventListener('icegatheringstatechange', () => {
+                    const checkState = () => {
                         if (pc.iceGatheringState === 'complete') {
+                            pc.removeEventListener('icegatheringstatechange', checkState);
                             resolve();
                         }
-                    });
+                    };
+                    pc.addEventListener('icegatheringstatechange', checkState);
+                    
+                    // Таймаут на случай, если сбор завис
+                    setTimeout(() => {
+                        pc.removeEventListener('icegatheringstatechange', checkState);
+                        resolve();
+                    }, 5000);
                 }
             });
         }
@@ -385,7 +421,11 @@
                 localStream = null;
             }
             
-            showStep(1);
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+            
             location.reload();
         }
 
@@ -394,10 +434,20 @@
             for (let i = 1; i <= 4; i++) {
                 const step = document.getElementById('step' + i);
                 if (step) {
-                    step.classList.toggle('hidden', i !== stepNumber);
+                    if (i === stepNumber) {
+                        step.classList.remove('hidden');
+                    } else {
+                        step.classList.add('hidden');
+                    }
                 }
             }
         }
+
+        // Обработка ошибок
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('Error:', msg, url, lineNo, columnNo, error);
+            return false;
+        };
     </script>
 </body>
-  </html>
+</html>
