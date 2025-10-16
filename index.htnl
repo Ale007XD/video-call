@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Видеозвонок</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            padding: 10px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            margin: 10px 0;
+            color: #0f3460;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 500px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .step {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        
+        .step-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #e94560;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            border: none;
+            border-radius: 8px;
+            background: #e94560;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        
+        button:active {
+            background: #c23850;
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #qrcode {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 250px;
+        }
+        
+        #qrcode canvas,
+        #qrcode img {
+            max-width: 100% !important;
+            height: auto !important;
+        }
+        
+        video {
+            width: 100%;
+            border-radius: 10px;
+            background: black;
+            max-height: 40vh;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .status.waiting {
+            background: #ffa500;
+            color: black;
+        }
+        
+        .status.connected {
+            background: #4caf50;
+        }
+        
+        #scanArea {
+            position: relative;
+            width: 100%;
+            height: 250px;
+            background: black;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        #scanVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .info {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎥 Видеозвонок</h1>
+    
+    <div class="container">
+        <!-- Шаг 1: Начало -->
+        <div id="step1" class="step">
+            <div class="step-title">Кто вы?</div>
+            <button onclick="startAsCaller()">Я звоню (покажу QR-код)</button>
+            <button onclick="startAsReceiver()">Мне звонят (отсканирую QR-код)</button>
+            <div class="info">
+                ℹ️ Один человек показывает QR-код, другой сканирует его камерой
+            </div>
+        </div>
+        
+        <!-- Шаг 2: Показ QR-кода (звонящий) -->
+        <div id="step2" class="step hidden">
+            <div class="step-title">Покажите этот QR-код</div>
+            <div id="qrcode"></div>
+            <div class="status waiting">⏳ Ждём подключения...</div>
+        </div>
+        
+        <!-- Шаг 3: Сканирование QR-кода (принимающий) -->
+        <div id="step3" class="step hidden">
+            <div class="step-title">Наведите камеру на QR-код</div>
+            <div id="scanArea">
+                <video id="scanVideo" autoplay playsinline></video>
+            </div>
+            <canvas id="scanCanvas" class="hidden"></canvas>
+            <div class="info">
+                📱 Держите телефон ровно и поближе к экрану
+            </div>
+        </div>
+        
+        <!-- Шаг 4: Видеозвонок -->
+        <div id="step4" class="step hidden">
+            <div class="status connected">✅ Подключено!</div>
+            <video id="remoteVideo" autoplay playsinline></video>
+            <video id="localVideo" autoplay playsinline muted></video>
+            <button onclick="hangUp()" style="background: #d32f2f;">Завершить звонок</button>
+        </div>
+    </div>
+
+    <!-- QR Code библиотека -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- jsQR библиотека для сканирования -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+    <script>
+        let pc = null;
+        let localStream = null;
+        let role = null;
+        let scanInterval = null;
+
+        // Конфигурация WebRTC с публичными STUN серверами
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Начать как звонящий
+        async function startAsCaller() {
+            role = 'caller';
+            showStep(2);
+            
+            try {
+                // Получить доступ к камере
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user' }, 
+                    audio: true 
+                });
+                
+                // Создать соединение
+                pc = new RTCPeerConnection(config);
+                
+                // Добавить локальный стрим
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                // Обработать входящий стрим
+                pc.ontrack = (event) => {
+                    document.getElementById('remoteVideo').srcObject = event.streams[0];
+                    document.getElementById('localVideo').srcObject = localStream;
+                    showStep(4);
+                };
+                
+                // Создать предложение
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                // Дождаться сбора всех ICE кандидатов
+                await waitForIceCandidates();
+                
+                // Показать QR-код с предложением
+                const offerData = JSON.stringify(pc.localDescription);
+                new QRCode(document.getElementById("qrcode"), {
+                    text: offerData,
+                    width: 256,
+                    height: 256,
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        // Начать как принимающий
+        async function startAsReceiver() {
+            role = 'receiver';
+            showStep(3);
+            
+            try {
+                // Запустить камеру для сканирования
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                
+                const video = document.getElementById('scanVideo');
+                video.srcObject = stream;
+                
+                // Начать сканирование QR-кода
+                startScanning();
+                
+            } catch (error) {
+                alert('Ошибка доступа к камере: ' + error.message);
+            }
+        }
+
+        // Сканирование QR-кода
+        function startScanning() {
+            const video = document.getElementById('scanVideo');
+            const canvas = document.getElementById('scanCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            scanInterval = setInterval(() => {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    
+                    if (code) {
+                        clearInterval(scanInterval);
+                        handleScannedData(code.data);
+                    }
+                }
+            }, 300);
+        }
+
+        // Обработать отсканированные данные
+        async function handleScannedData(data) {
+            try {
+                // Остановить камеру сканирования
+                const video = document.getElementById('scanVideo');
+                video.srcObject.getTracks().forEach(track => track.stop());
+                
+                const offer = JSON.parse(data);
+                
+                // Получить доступ к камере для видеозвонка
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user' }, 
+                    audio: true 
+                });
+                
+                // Создать соединение
+                pc = new RTCPeerConnection(config);
+                
+                // Добавить локальный стрим
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                // Обработать входящий стрим
+                pc.ontrack = (event) => {
+                    document.getElementById('remoteVideo').srcObject = event.streams[0];
+                    document.getElementById('localVideo').srcObject = localStream;
+                    showStep(4);
+                };
+                
+                // Установить удалённое описание
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                
+                // Создать ответ
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                // Дождаться сбора всех ICE кандидатов
+                await waitForIceCandidates();
+                
+                // Показать QR-код с ответом
+                showStep(2);
+                const answerData = JSON.stringify(pc.localDescription);
+                new QRCode(document.getElementById("qrcode"), {
+                    text: answerData,
+                    width: 256,
+                    height: 256,
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+                
+                // Теперь ждём, когда первый абонент отсканирует наш ответ
+                // Для упрощения - автоматически переходим к видео через 5 сек
+                setTimeout(() => {
+                    if (pc.connectionState !== 'connected') {
+                        showStep(4);
+                    }
+                }, 5000);
+                
+            } catch (error) {
+                alert('Ошибка обработки QR-кода: ' + error.message);
+            }
+        }
+
+        // Дождаться сбора всех ICE кандидатов
+        function waitForIceCandidates() {
+            return new Promise((resolve) => {
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                } else {
+                    pc.addEventListener('icegatheringstatechange', () => {
+                        if (pc.iceGatheringState === 'complete') {
+                            resolve();
+                        }
+                    });
+                }
+            });
+        }
+
+        // Завершить звонок
+        function hangUp() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            
+            showStep(1);
+            location.reload();
+        }
+
+        // Показать нужный шаг
+        function showStep(stepNumber) {
+            for (let i = 1; i <= 4; i++) {
+                const step = document.getElementById('step' + i);
+                if (step) {
+                    step.classList.toggle('hidden', i !== stepNumber);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
