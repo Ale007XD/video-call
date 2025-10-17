@@ -61,6 +61,7 @@
             font-weight: bold;
             cursor: pointer;
             margin-bottom: 10px;
+            touch-action: manipulation;
         }
         
         button:active {
@@ -82,7 +83,7 @@
         
         #qrcode {
             background: white;
-            padding: 20px;
+            padding: 15px;
             border-radius: 10px;
             display: flex;
             justify-content: center;
@@ -90,10 +91,17 @@
             min-height: 280px;
         }
         
+        #qrcode > div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
         #qrcode canvas,
         #qrcode img {
             max-width: 100% !important;
             height: auto !important;
+            display: block;
         }
         
         video {
@@ -161,7 +169,7 @@
             border: 2px solid #0f3460;
             background: #0a1929;
             color: white;
-            font-size: 14px;
+            font-size: 12px;
             font-family: monospace;
             resize: vertical;
         }
@@ -204,7 +212,7 @@
                 <button onclick="copyKey()" class="secondary">📋 Скопировать ключ</button>
                 <div id="copyStatus" class="status success hidden">✅ Ключ скопирован!</div>
                 <div class="info">
-                    💡 Если QR-код не появляется, нажмите кнопку выше и отправьте ключ любым способом (WhatsApp, Telegram и т.д.)
+                    💡 Если QR-код не появляется, нажмите кнопку выше и отправьте ключ любым способом
                 </div>
             </div>
         </div>
@@ -242,6 +250,9 @@
         </div>
     </div>
 
+    <!-- QRCode.js библиотека -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
     <!-- jsQR библиотека для сканирования -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
@@ -250,38 +261,45 @@
         let localStream = null;
         let role = null;
         let scanInterval = null;
-        let currentKey = null; // Хранение текущего ключа
+        let currentKey = null;
 
         // Конфигурация WebRTC с публичными STUN серверами
         const config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
             ]
         };
 
-        // Упрощённая генерация QR-кода (используем API)
+        // Генерация QR-кода с использованием qrcode.js
         function generateQRCode(text, elementId) {
             const qrDiv = document.getElementById(elementId);
-            qrDiv.innerHTML = ''; // Очистить предыдущий контент
+            qrDiv.innerHTML = '';
             
-            // Использовать API для генерации QR-кода
-            const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&format=svg`;
-            
-            const img = document.createElement('img');
-            img.src = qrApiUrl;
-            img.style.maxWidth = '100%';
-            img.style.height = 'auto';
-            img.onerror = function() {
-                // Если API не работает, показать сообщение
-                qrDiv.innerHTML = `<div style="color: #e94560; padding: 20px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                    <div>QR-код не загрузился</div>
-                    <div style="font-size: 14px; margin-top: 10px; color: #ffa500;">Используйте кнопку "Скопировать ключ" ниже</div>
-                </div>`;
-            };
-            
-            qrDiv.appendChild(img);
+            try {
+                // Проверка, что библиотека загружена
+                if (typeof QRCode === 'undefined') {
+                    console.error('QRCode library not loaded');
+                    qrDiv.innerHTML = '<div style="color: #e94560; padding: 20px; text-align: center;"><div style="font-size: 48px; margin-bottom: 10px;">⚠️</div><div>QR-код не загрузился</div><div style="font-size: 14px; margin-top: 10px; color: #ffa500;">Используйте кнопку "Скопировать ключ"</div></div>';
+                    return;
+                }
+                
+                // Создаем QR-код
+                new QRCode(qrDiv, {
+                    text: text,
+                    width: 256,
+                    height: 256,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+                
+                console.log('QR code generated successfully');
+            } catch (error) {
+                console.error('Error generating QR code:', error);
+                qrDiv.innerHTML = '<div style="color: #e94560; padding: 20px; text-align: center;"><div style="font-size: 48px; margin-bottom: 10px;">⚠️</div><div>Ошибка создания QR-кода</div><div style="font-size: 14px; margin-top: 10px; color: #ffa500;">Используйте кнопку "Скопировать ключ"</div></div>';
+            }
         }
 
         // Скопировать ключ в буфер обмена
@@ -292,39 +310,49 @@
             }
             
             try {
-                await navigator.clipboard.writeText(currentKey);
-                
-                // Показать сообщение об успехе
-                const status = document.getElementById('copyStatus');
-                status.classList.remove('hidden');
-                
-                // Скрыть через 3 секунды
-                setTimeout(() => {
-                    status.classList.add('hidden');
-                }, 3000);
-                
-            } catch (err) {
-                // Фоллбэк для старых браузеров
-                const textArea = document.createElement("textarea");
-                textArea.value = currentKey;
-                textArea.style.position = "fixed";
-                textArea.style.left = "-999999px";
-                document.body.appendChild(textArea);
-                textArea.select();
-                
-                try {
-                    document.execCommand('copy');
-                    const status = document.getElementById('copyStatus');
-                    status.classList.remove('hidden');
-                    setTimeout(() => {
-                        status.classList.add('hidden');
-                    }, 3000);
-                } catch (err2) {
-                    alert('Не удалось скопировать. Попробуйте ещё раз.');
+                // Современный API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(currentKey);
+                    showCopySuccess();
+                } else {
+                    // Фоллбэк для старых браузеров
+                    const textArea = document.createElement("textarea");
+                    textArea.value = currentKey;
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-999999px";
+                    textArea.style.top = "-999999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    
+                    try {
+                        const successful = document.execCommand('copy');
+                        if (successful) {
+                            showCopySuccess();
+                        } else {
+                            throw new Error('Copy command failed');
+                        }
+                    } catch (err) {
+                        console.error('Fallback copy failed:', err);
+                        alert('Не удалось скопировать автоматически. Ключ отображён ниже - скопируйте вручную:
+
+' + currentKey.substring(0, 100) + '...');
+                    }
+                    
+                    document.body.removeChild(textArea);
                 }
-                
-                document.body.removeChild(textArea);
+            } catch (err) {
+                console.error('Copy failed:', err);
+                alert('Не удалось скопировать. Попробуйте ещё раз.');
             }
+        }
+
+        function showCopySuccess() {
+            const status = document.getElementById('copyStatus');
+            status.classList.remove('hidden');
+            setTimeout(() => {
+                status.classList.add('hidden');
+            }, 3000);
         }
 
         // Остановить сканирование и показать ввод
@@ -358,11 +386,11 @@
             }
             
             try {
-                // Проверить, что это валидный JSON
                 JSON.parse(key);
                 handleScannedData(key);
             } catch (e) {
                 alert('Неправильный формат ключа. Убедитесь, что вы скопировали весь ключ полностью.');
+                console.error('Parse error:', e);
             }
         }
 
@@ -372,11 +400,19 @@
             showStep(2);
             
             try {
-                // Получить доступ к камере
+                console.log('Starting as caller...');
+                
+                // Получить доступ к камере и микрофону
                 localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user', width: 640, height: 480 }, 
+                    video: { 
+                        facingMode: 'user',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }, 
                     audio: true 
                 });
+                
+                console.log('Got local stream');
                 
                 // Создать соединение
                 pc = new RTCPeerConnection(config);
@@ -386,11 +422,19 @@
                     pc.addTrack(track, localStream);
                 });
                 
+                console.log('Added local tracks');
+                
                 // Обработать входящий стрим
                 pc.ontrack = (event) => {
+                    console.log('Received remote track');
                     document.getElementById('remoteVideo').srcObject = event.streams[0];
                     document.getElementById('localVideo').srcObject = localStream;
                     showStep(4);
+                };
+                
+                // Обработка ICE кандидатов
+                pc.onicecandidate = (event) => {
+                    console.log('ICE candidate:', event.candidate ? 'new candidate' : 'gathering complete');
                 };
                 
                 // Обработка состояния подключения
@@ -398,25 +442,34 @@
                     console.log('Connection state:', pc.connectionState);
                     if (pc.connectionState === 'connected') {
                         showStep(4);
+                    } else if (pc.connectionState === 'failed') {
+                        alert('Не удалось подключиться. Попробуйте ещё раз.');
                     }
                 };
                 
                 // Создать предложение
-                const offer = await pc.createOffer();
+                const offer = await pc.createOffer({
+                    offerToReceiveVideo: true,
+                    offerToReceiveAudio: true
+                });
+                
                 await pc.setLocalDescription(offer);
+                console.log('Created offer');
                 
                 // Дождаться сбора всех ICE кандидатов
                 await waitForIceCandidates();
                 
                 // Сохранить ключ
                 currentKey = JSON.stringify(pc.localDescription);
+                console.log('Offer ready, key length:', currentKey.length);
                 
                 // Показать QR-код с предложением
                 generateQRCode(currentKey, 'qrcode');
                 
             } catch (error) {
+                console.error('Error in startAsCaller:', error);
                 alert('Ошибка: ' + error.message);
-                console.error(error);
+                showStep(1);
             }
         }
 
@@ -426,6 +479,8 @@
             showStep(3);
             
             try {
+                console.log('Starting as receiver...');
+                
                 // Запустить камеру для сканирования
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
@@ -434,15 +489,17 @@
                 const video = document.getElementById('scanVideo');
                 video.srcObject = stream;
                 
+                console.log('Camera started for scanning');
+                
                 // Начать сканирование QR-кода
                 video.onloadedmetadata = () => {
+                    console.log('Video metadata loaded');
                     startScanning();
                 };
                 
             } catch (error) {
-                alert('Ошибка доступа к камере: ' + error.message);
-                console.error(error);
-                // Если камера недоступна, сразу показать ввод ключа
+                console.error('Error accessing camera:', error);
+                alert('Не удалось получить доступ к камере. Используйте ввод ключа вручную.');
                 showStep(3.5);
             }
         }
@@ -453,6 +510,8 @@
             const canvas = document.getElementById('scanCanvas');
             const ctx = canvas.getContext('2d');
             
+            console.log('Starting QR scan...');
+            
             scanInterval = setInterval(() => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
                     canvas.width = video.videoWidth;
@@ -462,11 +521,23 @@
                         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                         
                         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        const code = jsQR(imageData.data, imageData.width, imageData.height);
                         
-                        if (code && code.data) {
+                        if (typeof jsQR !== 'undefined') {
+                            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                                inversionAttempts: "dontInvert",
+                            });
+                            
+                            if (code && code.data) {
+                                console.log('QR code detected');
+                                clearInterval(scanInterval);
+                                scanInterval = null;
+                                handleScannedData(code.data);
+                            }
+                        } else {
+                            console.error('jsQR library not loaded');
                             clearInterval(scanInterval);
-                            handleScannedData(code.data);
+                            alert('Ошибка загрузки сканера. Используйте ввод ключа вручную.');
+                            stopScanAndShowInput();
                         }
                     }
                 }
@@ -476,92 +547,139 @@
         // Обработать отсканированные данные
         async function handleScannedData(data) {
             try {
+                console.log('Processing scanned data...');
+                
                 // Остановить камеру сканирования
                 const video = document.getElementById('scanVideo');
                 if (video.srcObject) {
                     video.srcObject.getTracks().forEach(track => track.stop());
                 }
                 
-                const offer = JSON.parse(data);
+                const remoteDesc = JSON.parse(data);
+                console.log('Parsed remote description type:', remoteDesc.type);
                 
-                // Получить доступ к камере для видеозвонка
-                localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user', width: 640, height: 480 }, 
-                    audio: true 
-                });
-                
-                // Создать соединение
-                pc = new RTCPeerConnection(config);
-                
-                // Добавить локальный стрим
-                localStream.getTracks().forEach(track => {
-                    pc.addTrack(track, localStream);
-                });
-                
-                // Обработать входящий стрим
-                pc.ontrack = (event) => {
-                    document.getElementById('remoteVideo').srcObject = event.streams[0];
-                    document.getElementById('localVideo').srcObject = localStream;
-                    showStep(4);
-                };
-                
-                // Обработка состояния подключения
-                pc.onconnectionstatechange = () => {
-                    console.log('Connection state:', pc.connectionState);
-                    if (pc.connectionState === 'connected') {
+                if (remoteDesc.type === 'offer') {
+                    // Мы получили предложение - нужно ответить
+                    console.log('Received offer, creating answer...');
+                    
+                    // Получить доступ к камере для видеозвонка
+                    localStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            facingMode: 'user',
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        }, 
+                        audio: true 
+                    });
+                    
+                    console.log('Got local stream');
+                    
+                    // Создать соединение
+                    pc = new RTCPeerConnection(config);
+                    
+                    // Добавить локальный стрим
+                    localStream.getTracks().forEach(track => {
+                        pc.addTrack(track, localStream);
+                    });
+                    
+                    // Обработать входящий стрим
+                    pc.ontrack = (event) => {
+                        console.log('Received remote track');
+                        document.getElementById('remoteVideo').srcObject = event.streams[0];
+                        document.getElementById('localVideo').srcObject = localStream;
                         showStep(4);
+                    };
+                    
+                    // Обработка состояния подключения
+                    pc.onconnectionstatechange = () => {
+                        console.log('Connection state:', pc.connectionState);
+                        if (pc.connectionState === 'connected') {
+                            showStep(4);
+                        } else if (pc.connectionState === 'failed') {
+                            alert('Не удалось подключиться. Попробуйте ещё раз.');
+                        }
+                    };
+                    
+                    // Установить удалённое описание
+                    await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+                    console.log('Set remote description');
+                    
+                    // Создать ответ
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    console.log('Created answer');
+                    
+                    // Дождаться сбора всех ICE кандидатов
+                    await waitForIceCandidates();
+                    
+                    // Сохранить ключ
+                    currentKey = JSON.stringify(pc.localDescription);
+                    console.log('Answer ready, key length:', currentKey.length);
+                    
+                    // Показать QR-код с ответом
+                    showStep(2);
+                    document.querySelector('#step2 .step-title').textContent = 'Теперь покажите ЭТОТ QR-код';
+                    generateQRCode(currentKey, 'qrcode');
+                    
+                } else if (remoteDesc.type === 'answer') {
+                    // Мы получили ответ - устанавливаем его
+                    console.log('Received answer, setting it...');
+                    
+                    if (!pc) {
+                        throw new Error('No peer connection available');
                     }
-                };
-                
-                // Установить удалённое описание
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
-                
-                // Создать ответ
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                
-                // Дождаться сбора всех ICE кандидатов
-                await waitForIceCandidates();
-                
-                // Сохранить ключ
-                currentKey = JSON.stringify(pc.localDescription);
-                
-                // Показать QR-код с ответом
-                showStep(2);
-                document.querySelector('#step2 .step-title').textContent = 'Теперь покажите ЭТОТ QR-код';
-                generateQRCode(currentKey, 'qrcode');
+                    
+                    await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+                    console.log('Set remote answer');
+                    
+                    // Соединение должно установиться автоматически
+                    
+                } else {
+                    throw new Error('Unknown SDP type: ' + remoteDesc.type);
+                }
                 
             } catch (error) {
+                console.error('Error handling scanned data:', error);
                 alert('Ошибка обработки ключа: ' + error.message);
-                console.error(error);
+                showStep(1);
             }
         }
 
         // Дождаться сбора всех ICE кандидатов
         function waitForIceCandidates() {
             return new Promise((resolve) => {
+                console.log('Waiting for ICE candidates...');
+                
                 if (pc.iceGatheringState === 'complete') {
+                    console.log('ICE gathering already complete');
                     resolve();
-                } else {
-                    const checkState = () => {
-                        if (pc.iceGatheringState === 'complete') {
-                            pc.removeEventListener('icegatheringstatechange', checkState);
-                            resolve();
-                        }
-                    };
-                    pc.addEventListener('icegatheringstatechange', checkState);
-                    
-                    // Таймаут на случай, если сбор завис
-                    setTimeout(() => {
-                        pc.removeEventListener('icegatheringstatechange', checkState);
-                        resolve();
-                    }, 5000);
+                    return;
                 }
+                
+                const checkState = () => {
+                    console.log('ICE gathering state:', pc.iceGatheringState);
+                    if (pc.iceGatheringState === 'complete') {
+                        pc.removeEventListener('icegatheringstatechange', checkState);
+                        console.log('ICE gathering complete');
+                        resolve();
+                    }
+                };
+                
+                pc.addEventListener('icegatheringstatechange', checkState);
+                
+                // Таймаут - если через 5 секунд не собрались, продолжаем
+                setTimeout(() => {
+                    pc.removeEventListener('icegatheringstatechange', checkState);
+                    console.log('ICE gathering timeout, proceeding anyway');
+                    resolve();
+                }, 5000);
             });
         }
 
         // Завершить звонок
         function hangUp() {
+            console.log('Hanging up...');
+            
             if (pc) {
                 pc.close();
                 pc = null;
@@ -583,6 +701,8 @@
 
         // Показать нужный шаг
         function showStep(stepNumber) {
+            console.log('Showing step:', stepNumber);
+            
             const steps = [1, 2, 3, 3.5, 4];
             steps.forEach(num => {
                 const stepId = 'step' + (num === 3.5 ? '3_5' : num);
@@ -599,9 +719,24 @@
 
         // Обработка ошибок
         window.onerror = function(msg, url, lineNo, columnNo, error) {
-            console.error('Error:', msg, url, lineNo, columnNo, error);
+            console.error('Global error:', msg, url, lineNo, columnNo, error);
             return false;
         };
+
+        // Проверка загрузки библиотек
+        window.addEventListener('load', function() {
+            console.log('Page loaded');
+            console.log('QRCode available:', typeof QRCode !== 'undefined');
+            console.log('jsQR available:', typeof jsQR !== 'undefined');
+            
+            if (typeof QRCode === 'undefined') {
+                console.error('QRCode library failed to load');
+            }
+            
+            if (typeof jsQR === 'undefined') {
+                console.error('jsQR library failed to load');
+            }
+        });
     </script>
 </body>
 </html>
