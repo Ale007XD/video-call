@@ -2,405 +2,185 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Видеозвонок</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <title>Прямой видеозвонок WebRTC P2P QR</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: Arial, sans-serif;
-            background: #1a1a2e;
-            color: white;
-            padding: 10px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        h1 {
-            text-align: center;
-            font-size: 24px;
-            margin: 10px 0;
-            color: #e94560;
-        }
-        
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            max-width: 500px;
-            margin: 0 auto;
-            width: 100%;
-        }
-        
-        .step {
-            background: #16213e;
-            border-radius: 10px;
-            padding: 15px;
-        }
-        
-        .step-title {
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #e94560;
-        }
-        
-        button {
-            width: 100%;
-            padding: 15px;
-            font-size: 18px;
-            border: none;
-            border-radius: 8px;
-            background: #e94560;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            margin-bottom: 10px;
-            touch-action: manipulation;
-        }
-        
-        button:active {
-            background: #c23850;
-        }
-        
-        button:disabled {
-            background: #666;
-            cursor: not-allowed;
-        }
-        
-        button.secondary {
-            background: #0f3460;
-        }
-        
-        button.secondary:active {
-            background: #0a2540;
-        }
-        
-        #qrcode {
-            background: white;
-            padding: 15px;
-            border-radius: 10px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 280px;
-        }
-        
-        #qrcode > div {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        #qrcode canvas,
-        #qrcode img {
-            max-width: 100% !important;
-            height: auto !important;
-            display: block;
-        }
-        
-        video {
-            width: 100%;
-            border-radius: 10px;
-            background: black;
-            max-height: 40vh;
-        }
-        
-        .hidden {
-            display: none !important;
-        }
-        
-        .status {
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            font-size: 16px;
-            font-weight: bold;
-        }
-        
-        .status.waiting {
-            background: #ffa500;
-            color: black;
-        }
-        
-        .status.connected {
-            background: #4caf50;
-        }
-        
-        .status.success {
-            background: #4caf50;
-            margin-top: 10px;
-        }
-        
-        #scanArea {
-            position: relative;
-            width: 100%;
-            height: 250px;
-            background: black;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        #scanVideo {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .info {
-            background: #0f3460;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            line-height: 1.5;
-            margin-top: 10px;
-        }
-        
-        textarea {
-            width: 100%;
-            min-height: 120px;
-            padding: 10px;
-            border-radius: 5px;
-            border: 2px solid #0f3460;
-            background: #0a1929;
-            color: white;
-            font-size: 12px;
-            font-family: monospace;
-            resize: vertical;
-        }
-        
-        .key-section {
-            margin-top: 15px;
-        }
-        
-        .or-divider {
-            text-align: center;
-            margin: 15px 0;
-            color: #666;
-            font-weight: bold;
-        }
+    body { background: #151531; color: #fff; font-family: sans-serif; }
+    .center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .block { background: #23235a; margin: 1em 0; padding: 1em; border-radius: 1em; width: 100%; max-width: 390px; }
+    button { font-size: 20px; margin: 1em 0; width: 100%; background: #e94560; border: none; border-radius: 8px; padding: 12px; color: #fff; }
+    textarea { width: 100%; min-height: 100px; margin: 7px 0; border-radius: 6px; border: 1px solid #888; padding: 8px; resize: vertical; }
+    .hidden { display: none; }
+    #qrcode { background:#fff; padding: 15px; border-radius: 14px; margin-top: 10px; min-height: 200px; display: flex; align-items: center; justify-content: center;}
+    .error { color: #ff7785; margin: 1em 0; text-align:center;}
+    .ok { color: #94ff94; }
     </style>
 </head>
 <body>
-    <h1>🎥 Видеозвонок</h1>
-    
-    <div class="container">
-        <!-- Шаг 1: Начало -->
-        <div id="step1" class="step">
-            <div class="step-title">Кто вы?</div>
-            <button onclick="startCall(true)">Я звоню (покажу QR-код)</button>
-            <button onclick="startCall(false)">Мне звонят (отсканирую QR-код)</button>
-            <div class="info">
-                ℹ️ Один человек показывает QR-код, другой сканирует его камерой
-            </div>
-        </div>
-        
-        <!-- Шаг 2: Показ/ввод ключа -->
-        <div id="step2" class="step hidden">
-            <div id="offerSection">
-                <div class="step-title">1. Покажите этот QR-код</div>
-                <div id="offerQr"></div>
-                <div class="or-divider">ИЛИ</div>
-                <button onclick="copyKey(offerKey)" class="secondary">📋 Скопировать ключ-предложение</button>
-            </div>
-            
-            <div id="answerSection">
-                <div class="step-title">2. Введите ключ-ответ</div>
-                <textarea id="answerKeyInput" placeholder="Вставьте сюда ключ-ответ от собеседника..."></textarea>
-                <button onclick="processAnswerKey()">✅ Подключиться</button>
-            </div>
-        </div>
-        
-        <!-- Шаг 3: Сканирование/ввод ключа -->
-        <div id="step3" class="step hidden">
-            <div class="step-title">1. Отсканируйте QR-код</div>
-            <div id="scanArea">
-                <video id="scanVideo" autoplay playsinline></video>
-            </div>
-            <canvas id="scanCanvas" class="hidden"></canvas>
-            <div class="or-divider">ИЛИ</div>
-            <div class="step-title">1. Введите ключ-предложение</div>
-            <textarea id="offerKeyInput" placeholder="Вставьте сюда ключ-предложение от звонящего..."></textarea>
-            
-            <div id="createAnswerSection" class="hidden">
-                <div class="step-title">2. Покажите этот QR-код</div>
-                <div id="answerQr"></div>
-                <div class="or-divider">ИЛИ</div>
-                <button onclick="copyKey(answerKey)" class="secondary">📋 Скопировать ключ-ответ</button>
-            </div>
-        </div>
-        
-        <!-- Шаг 4: Видеозвонок -->
-        <div id="step4" class="step hidden">
-            <div class="status connected">✅ Подключено!</div>
-            <video id="remoteVideo" autoplay playsinline></video>
-            <video id="localVideo" autoplay playsinline muted></video>
-            <button onclick="hangUp()" style="background: #d32f2f;">Завершить звонок</button>
-        </div>
-        
-        <div id="copyStatus" class="status success hidden" style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;">
-            ✅ Ключ скопирован!
-        </div>
-    </div>
+<div class="center"><h2>🟢 Видеозвонок между телефонами (QR/WebRTC)</h2>
 
-    <!-- QRCode.js библиотека -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    
-    <!-- jsQR библиотека для сканирования -->
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<div id="step1" class="block">
+    <b>Выберите режим:</b>
+    <button onclick="asCaller()">Я звоню – создать ссылку</button>
+    <button onclick="asAnswer()">Мне звонят – я принимаю звонок</button>
+</div>
 
-    <script>
-        let pc;
-        let localStream;
-        let offerKey;
-        let answerKey;
+<div id="step2" class="block hidden">
+    <b>1. Поделитесь этим ключом:</b>
+    <div id="qrcode" class="hidden"></div>
+    <textarea id="sdpOut" readonly></textarea>
+    <button onclick="copyToClipboard()">📋 Скопировать</button>
+    <div id="qrwarn" class="error hidden"></div>
+    <hr>
+    <b>2. Введите ключ-ответ от второго устройства:</b>
+    <textarea id="sdpIn" placeholder="Вставьте ключ-ответ сюда"></textarea>
+    <button onclick="importRemoteDesc()">✅ Установить соединение</button>
+    <div class="error" id="startError"></div>
+</div>
 
-        // Конфигурация WebRTC с публичными STUN серверами
-        const config = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+<div id="step3" class="block hidden">
+    <b>1. Введите ключ-приглашение от звонящего:</b>
+    <textarea id="sdpIn2" placeholder="Вставьте ключ-приглашение сюда или отсканируйте QR-код"></textarea>
+    <button onclick="importOfferDesc()">Создать ответ</button>
+    <div id="createWarn" class="error hidden"></div>
+    <hr>
+    <b>2. Поделитесь этим ключом-ответом:</b>
+    <div id="qrcode2" class="hidden"></div>
+    <textarea id="sdpOut2" readonly></textarea>
+    <button onclick="copyToClipboard2()">📋 Скопировать</button>
+</div>
+
+<div id="step4" class="block hidden">
+    <div class="ok">🔗 Канал установлен! Видео ниже.</div>
+    <video id="remoteVideo" autoplay playsinline style="width:100%;margin-top:7px;border-radius:9px;"></video>
+    <video id="localVideo" autoplay playsinline muted style="width:45%;margin-top:7px;border-radius:8px;position:absolute;right:10px;top:10px;max-width:120px;max-height:100px;z-index:2;"></video>
+    <button onclick="hangup()">❌ Завершить звонок</button>
+</div>
+
+<div style="text-align:center;font-size:13px;color:#ccc;margin-top:32px;">by @yourname, open source</div>
+</div>
+<!-- QRCode.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+let pc, localStream, mode, canShareQR = true;
+
+// ---- UI STEP SWITCH ----
+function show(id) {
+    ['step1','step2','step3','step4'].forEach(e=>{document.getElementById(e).classList.add('hidden')});
+    document.getElementById(id).classList.remove('hidden');
+}
+
+// ---- COPIER ----
+function copyToClipboard() {
+    const ta = document.getElementById('sdpOut');
+    ta.select(); ta.setSelectionRange(0, ta.value.length);
+    document.execCommand('copy');
+}
+function copyToClipboard2() {
+    const ta = document.getElementById('sdpOut2');
+    ta.select(); ta.setSelectionRange(0, ta.value.length);
+    document.execCommand('copy');
+}
+
+// ---- MODE INITIATOR ----
+async function asCaller() {
+    mode = "caller";
+    show('step2');
+    document.getElementById('startError').textContent = '';
+    canShareQR = true;
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:true});
+        document.getElementById('localVideo').srcObject = localStream;
+        pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+        localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
+        pc.onicecandidate = e => {
+            if (e.candidate === null) showOffer();
         };
+        pc.ontrack = e => {
+            document.getElementById('remoteVideo').srcObject = e.streams[0];
+            show('step4');
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+    } catch(e) {
+        document.getElementById('startError').textContent = 'Нет доступа к камере/микрофону';
+    }
+}
 
-        // Генерация QR-кода
-        function generateQRCode(text, elementId) {
-            const qrDiv = document.getElementById(elementId);
-            qrDiv.innerHTML = '';
-            try {
-                if (typeof QRCode === 'undefined') throw new Error('QRCode.js not loaded');
-                new QRCode(qrDiv, { text: text, width: 256, height: 256 });
-            } catch (error) {
-                console.error(error);
-                qrDiv.innerHTML = `<div style="color: #e94560; text-align: center;">Ошибка QR. Используйте копирование ключа.</div>`;
-            }
-        }
+// ---- SHOW OFFER ----
+function showOffer() {
+    let sdp = JSON.stringify(pc.localDescription);
+    document.getElementById('sdpOut').value = sdp;
+    // QR только при длине ≤800 символов!
+    if (sdp.length <= 800) {
+        document.getElementById('qrcode').classList.remove('hidden');
+        new QRCode(document.getElementById('qrcode'), {text: sdp, width:230, height:230});
+        document.getElementById('qrwarn').classList.add('hidden');
+    } else {
+        document.getElementById('qrcode').classList.add('hidden');
+        document.getElementById('qrwarn').classList.remove('hidden');
+        document.getElementById('qrwarn').innerHTML = 'SDP слишком большой для QR-кода.<br>Используйте копирование!';
+        canShareQR = false;
+    }
+}
 
-        // Копирование ключа
-        async function copyKey(key) {
-            if (!key) return;
-            try {
-                await navigator.clipboard.writeText(key);
-                const status = document.getElementById('copyStatus');
-                status.classList.remove('hidden');
-                setTimeout(() => status.classList.add('hidden'), 3000);
-            } catch (err) {
-                alert('Не удалось скопировать. Попробуйте вручную.');
-            }
-        }
-        
-        // Начало звонка
-        async function startCall(isCaller) {
-            showStep(isCaller ? 2 : 3);
-            
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('localVideo').srcObject = localStream;
-                
-                pc = new RTCPeerConnection(config);
-                pc.onicecandidate = event => {
-                    if (event.candidate === null) {
-                        if(isCaller) {
-                            offerKey = JSON.stringify(pc.localDescription);
-                            generateQRCode(offerKey, 'offerQr');
-                        } else {
-                            answerKey = JSON.stringify(pc.localDescription);
-                            generateQRCode(answerKey, 'answerQr');
-                            document.getElementById('createAnswerSection').classList.remove('hidden');
-                        }
-                    }
-                };
-                pc.ontrack = event => {
-                    document.getElementById('remoteVideo').srcObject = event.streams[0];
-                    showStep(4);
-                };
-                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+// ---- ANSWER SIDE ----
+async function asAnswer() {
+    mode = "answer";
+    show('step3');
+    document.getElementById('createWarn').classList.add('hidden');
+}
+// ---- IMPORT SDP FOR ANSWER ----
+async function importOfferDesc() {
+    let sdp = document.getElementById('sdpIn2').value.trim();
+    if (!sdp) return;
+    try {
+        sdp = JSON.parse(sdp);
+        localStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:true});
+        document.getElementById('localVideo').srcObject = localStream;
+        pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+        localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
+        pc.ontrack = e => {document.getElementById('remoteVideo').srcObject=e.streams[0];show('step4');};
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        pc.onicecandidate = e => {
+            if(e.candidate === null) showAnswer();
+        };
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+    } catch(e) {
+        document.getElementById('createWarn').classList.remove('hidden');
+        document.getElementById('createWarn').textContent = 'Ошибка! Недопустимый ключ.';
+    }
+}
+function showAnswer() {
+    let sdp = JSON.stringify(pc.localDescription);
+    document.getElementById('sdpOut2').value = sdp;
+    if (sdp.length <= 800) {
+        document.getElementById('qrcode2').classList.remove('hidden');
+        new QRCode(document.getElementById('qrcode2'), {text: sdp, width:230, height:230});
+    } else {
+        document.getElementById('qrcode2').classList.add('hidden');
+    }
+}
 
-                if (isCaller) {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                } else {
-                    document.getElementById('offerKeyInput').addEventListener('input', processOfferKey);
-                    startScanner();
-                }
+// ---- CALLER completes answer ----
+async function importRemoteDesc() {
+    let sdp = document.getElementById('sdpIn').value.trim();
+    if (!sdp) return;
+    try {
+        sdp = JSON.parse(sdp);
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch(e) {
+        document.getElementById('startError').textContent = 'Ошибка! Ключ-ответ не подходит.';
+    }
+}
 
-            } catch(e) {
-                console.error(e);
-                alert('Ошибка доступа к камере или микрофону.');
-                showStep(1);
-            }
-        }
-        
-        // Сканирование QR-кода
-        function startScanner() {
-            const video = document.getElementById('scanVideo');
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(stream => {
-                video.srcObject = stream;
-                const canvas = document.getElementById('scanCanvas');
-                const ctx = canvas.getContext('2d');
-                const interval = setInterval(() => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const code = jsQR(imageData.data, imageData.width, imageData.height);
-                    if (code) {
-                        clearInterval(interval);
-                        video.srcObject.getTracks().forEach(track => track.stop());
-                        document.getElementById('offerKeyInput').value = code.data;
-                        processOfferKey();
-                    }
-                }, 300);
-            }).catch(e => {
-                console.error(e);
-                alert('Не удалось запустить камеру для сканирования.');
-            });
-        }
-        
-        // Обработка ключа-предложения
-        async function processOfferKey() {
-            const offer = JSON.parse(document.getElementById('offerKeyInput').value);
-            if (!offer) return;
-            
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-        }
-        
-        // Обработка ключа-ответа
-        async function processAnswerKey() {
-            const answer = JSON.parse(document.getElementById('answerKeyInput').value);
-            if (!answer) return;
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        }
-
-        // Завершение звонка
-        function hangUp() {
-            if (pc) {
-                pc.close();
-                pc = null;
-            }
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-            }
-            location.reload();
-        }
-
-        // Показать нужный шаг
-        function showStep(stepNumber) {
-            [1, 2, 3, 4].forEach(num => {
-                const step = document.getElementById('step' + num);
-                if (step) {
-                    step.classList.toggle('hidden', num !== stepNumber);
-                }
-            });
-        }
-    </script>
+// ---- HANGUP ----
+function hangup() {
+    try { pc && pc.close(); } catch(e){}
+    if(localStream) localStream.getTracks().forEach(tr=>tr.stop());
+    show('step1');
+}
+</script>
 </body>
 </html>
