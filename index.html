@@ -5,15 +5,17 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
     <title>Прямой видеозвонок WebRTC P2P QR</title>
     <style>
-    body { background: #151531; color: #fff; font-family: sans-serif; }
-    .center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    body { background: #151531; color: #fff; font-family: sans-serif; margin: 0; padding: 20px; box-sizing: border-box; }
+    .center { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
     .block { background: #23235a; margin: 1em 0; padding: 1em; border-radius: 1em; width: 100%; max-width: 390px; }
-    button { font-size: 20px; margin: 1em 0; width: 100%; background: #e94560; border: none; border-radius: 8px; padding: 12px; color: #fff; }
-    textarea { width: 100%; min-height: 100px; margin: 7px 0; border-radius: 6px; border: 1px solid #888; padding: 8px; resize: vertical; }
+    button { font-size: 18px; margin: 1em 0; width: 100%; background: #e94560; border: none; border-radius: 8px; padding: 12px; color: #fff; cursor: pointer; }
+    textarea { width: 100%; min-height: 100px; margin: 7px 0; border-radius: 6px; border: 1px solid #888; padding: 8px; resize: vertical; background: #1e1e44; color: #fff; }
     .hidden { display: none; }
-    #qrcode { background:#fff; padding: 15px; border-radius: 14px; margin-top: 10px; min-height: 200px; display: flex; align-items: center; justify-content: center;}
-    .error { color: #ff7785; margin: 1em 0; text-align:center;}
+    #qrcode, #qrcode2 { background:#fff; padding: 15px; border-radius: 14px; margin-top: 10px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+    .error { color: #ff7785; margin: 1em 0; text-align:center; }
     .ok { color: #94ff94; }
+    #localVideo { width:45%; margin-top:7px; border-radius:8px; position:absolute; right:10px; top:10px; max-width:120px; max-height:100px; z-index:2; background:#000; }
+    #remoteVideo { width:100%; margin-top:7px; border-radius:9px; background:#000; }
     </style>
 </head>
 <body>
@@ -21,15 +23,15 @@
 
 <div id="step1" class="block">
     <b>Выберите режим:</b>
-    <button onclick="asCaller()">Я звоню – создать ссылку</button>
-    <button onclick="asAnswer()">Мне звонят – я принимаю звонок</button>
+    <button onclick="asCaller()">Я звоню – создать ссылку</button>
+    <button onclick="asAnswer()">Мне звонят – я принимаю звонок</button>
 </div>
 
 <div id="step2" class="block hidden">
     <b>1. Поделитесь этим ключом:</b>
     <div id="qrcode" class="hidden"></div>
     <textarea id="sdpOut" readonly></textarea>
-    <button onclick="copyToClipboard()">📋 Скопировать</button>
+    <button onclick="copyToClipboard('sdpOut')">📋 Скопировать</button>
     <div id="qrwarn" class="error hidden"></div>
     <hr>
     <b>2. Введите ключ-ответ от второго устройства:</b>
@@ -47,139 +49,225 @@
     <b>2. Поделитесь этим ключом-ответом:</b>
     <div id="qrcode2" class="hidden"></div>
     <textarea id="sdpOut2" readonly></textarea>
-    <button onclick="copyToClipboard2()">📋 Скопировать</button>
+    <button onclick="copyToClipboard('sdpOut2')">📋 Скопировать</button>
 </div>
 
 <div id="step4" class="block hidden">
     <div class="ok">🔗 Канал установлен! Видео ниже.</div>
-    <video id="remoteVideo" autoplay playsinline style="width:100%;margin-top:7px;border-radius:9px;"></video>
-    <video id="localVideo" autoplay playsinline muted style="width:45%;margin-top:7px;border-radius:8px;position:absolute;right:10px;top:10px;max-width:120px;max-height:100px;z-index:2;"></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay playsinline muted></video>
     <button onclick="hangup()">❌ Завершить звонок</button>
 </div>
 
 <div style="text-align:center;font-size:13px;color:#ccc;margin-top:32px;">by @yourname, open source</div>
 </div>
+
 <!-- QRCode.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-let pc, localStream, mode, canShareQR = true;
+let pc = null;
+let localStream = null;
 
-// ---- UI STEP SWITCH ----
 function show(id) {
-    ['step1','step2','step3','step4'].forEach(e=>{document.getElementById(e).classList.add('hidden')});
+    ['step1','step2','step3','step4'].forEach(e => {
+        document.getElementById(e).classList.add('hidden');
+    });
     document.getElementById(id).classList.remove('hidden');
 }
 
-// ---- COPIER ----
-function copyToClipboard() {
-    const ta = document.getElementById('sdpOut');
-    ta.select(); ta.setSelectionRange(0, ta.value.length);
-    document.execCommand('copy');
-}
-function copyToClipboard2() {
-    const ta = document.getElementById('sdpOut2');
-    ta.select(); ta.setSelectionRange(0, ta.value.length);
-    document.execCommand('copy');
+async function copyToClipboard(id) {
+    const text = document.getElementById(id).value;
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        // Можно добавить уведомление "скопировано"
+    } catch (err) {
+        console.error('Не удалось скопировать:', err);
+        // fallback (редко нужно)
+        const ta = document.getElementById(id);
+        ta.select();
+        ta.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+    }
 }
 
-// ---- MODE INITIATOR ----
+function showQRIfNeeded(sdpId, qrId, warnId) {
+    const sdpText = document.getElementById(sdpId).value;
+    const qrEl = document.getElementById(qrId);
+    const warnEl = document.getElementById(warnId);
+    if (sdpText.length <= 800) {
+        qrEl.classList.remove('hidden');
+        // Очистим предыдущий QR
+        qrEl.innerHTML = '';
+        new QRCode(qrEl, { text: sdpText, width: 230, height: 230 });
+        warnEl.classList.add('hidden');
+    } else {
+        qrEl.classList.add('hidden');
+        warnEl.classList.remove('hidden');
+        warnEl.innerHTML = 'SDP слишком большой для QR-кода.<br>Используйте копирование!';
+    }
+}
+
+function hangup() {
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(tr => tr.stop());
+        localStream = null;
+    }
+    document.getElementById('localVideo').srcObject = null;
+    document.getElementById('remoteVideo').srcObject = null;
+    show('step1');
+}
+
+// === CALLER ===
 async function asCaller() {
-    mode = "caller";
+    hangup(); // на случай повторного запуска
     show('step2');
     document.getElementById('startError').textContent = '';
-    canShareQR = true;
+
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:true});
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
-        pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-        localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
-        pc.onicecandidate = e => {
-            if (e.candidate === null) showOffer();
-        };
+
+        const iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ];
+
+        pc = new RTCPeerConnection({ iceServers });
+
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
         pc.ontrack = e => {
             document.getElementById('remoteVideo').srcObject = e.streams[0];
             show('step4');
         };
+
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'failed') {
+                alert('Соединение не удалось. Попробуйте снова.');
+                hangup();
+            }
+        };
+
+        const candidates = [];
+        pc.onicecandidate = async (event) => {
+            if (event.candidate) {
+                candidates.push(event.candidate);
+            } else {
+                // Все кандидаты собраны
+                const offer = pc.localDescription;
+                let sdpWithCandidates = offer.sdp;
+                for (const cand of candidates) {
+                    sdpWithCandidates += `a=candidate:${cand.candidate}\r\n`;
+                }
+                const fullOffer = { type: 'offer', sdp: sdpWithCandidates };
+                document.getElementById('sdpOut').value = JSON.stringify(fullOffer);
+                showQRIfNeeded('sdpOut', 'qrcode', 'qrwarn');
+            }
+        };
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-    } catch(e) {
+        // Кандидаты начнут собираться автоматически
+    } catch (e) {
+        console.error(e);
         document.getElementById('startError').textContent = 'Нет доступа к камере/микрофону';
     }
 }
 
-// ---- SHOW OFFER ----
-function showOffer() {
-    let sdp = JSON.stringify(pc.localDescription);
-    document.getElementById('sdpOut').value = sdp;
-    // QR только при длине ≤800 символов!
-    if (sdp.length <= 800) {
-        document.getElementById('qrcode').classList.remove('hidden');
-        new QRCode(document.getElementById('qrcode'), {text: sdp, width:230, height:230});
-        document.getElementById('qrwarn').classList.add('hidden');
-    } else {
-        document.getElementById('qrcode').classList.add('hidden');
-        document.getElementById('qrwarn').classList.remove('hidden');
-        document.getElementById('qrwarn').innerHTML = 'SDP слишком большой для QR-кода.<br>Используйте копирование!';
-        canShareQR = false;
-    }
-}
-
-// ---- ANSWER SIDE ----
+// === ANSWER ===
 async function asAnswer() {
-    mode = "answer";
+    hangup();
     show('step3');
     document.getElementById('createWarn').classList.add('hidden');
 }
-// ---- IMPORT SDP FOR ANSWER ----
+
 async function importOfferDesc() {
-    let sdp = document.getElementById('sdpIn2').value.trim();
-    if (!sdp) return;
+    const sdpText = document.getElementById('sdpIn2').value.trim();
+    if (!sdpText) return;
+
     try {
-        sdp = JSON.parse(sdp);
-        localStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:true});
+        const offer = JSON.parse(sdpText);
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
-        pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-        localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
-        pc.ontrack = e => {document.getElementById('remoteVideo').srcObject=e.streams[0];show('step4');};
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        pc.onicecandidate = e => {
-            if(e.candidate === null) showAnswer();
+
+        const iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ];
+
+        pc = new RTCPeerConnection({ iceServers });
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        pc.ontrack = e => {
+            document.getElementById('remoteVideo').srcObject = e.streams[0];
+            show('step4');
         };
+
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'failed') {
+                alert('Соединение не удалось. Попробуйте снова.');
+                hangup();
+            }
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+        const candidates = [];
+        pc.onicecandidate = async (event) => {
+            if (event.candidate) {
+                candidates.push(event.candidate);
+            } else {
+                const answer = pc.localDescription;
+                let sdpWithCandidates = answer.sdp;
+                for (const cand of candidates) {
+                    sdpWithCandidates += `a=candidate:${cand.candidate}\r\n`;
+                }
+                const fullAnswer = { type: 'answer', sdp: sdpWithCandidates };
+                document.getElementById('sdpOut2').value = JSON.stringify(fullAnswer);
+                showQRIfNeeded('sdpOut2', 'qrcode2', 'createWarn');
+            }
+        };
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-    } catch(e) {
+
+    } catch (e) {
+        console.error(e);
         document.getElementById('createWarn').classList.remove('hidden');
         document.getElementById('createWarn').textContent = 'Ошибка! Недопустимый ключ.';
     }
 }
-function showAnswer() {
-    let sdp = JSON.stringify(pc.localDescription);
-    document.getElementById('sdpOut2').value = sdp;
-    if (sdp.length <= 800) {
-        document.getElementById('qrcode2').classList.remove('hidden');
-        new QRCode(document.getElementById('qrcode2'), {text: sdp, width:230, height:230});
-    } else {
-        document.getElementById('qrcode2').classList.add('hidden');
-    }
-}
 
-// ---- CALLER completes answer ----
+// === CALLER: установить ответ ===
 async function importRemoteDesc() {
-    let sdp = document.getElementById('sdpIn').value.trim();
-    if (!sdp) return;
+    const sdpText = document.getElementById('sdpIn').value.trim();
+    if (!sdpText) return;
+
     try {
-        sdp = JSON.parse(sdp);
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    } catch(e) {
+        const answer = JSON.parse(sdpText);
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (e) {
+        console.error(e);
         document.getElementById('startError').textContent = 'Ошибка! Ключ-ответ не подходит.';
     }
-}
-
-// ---- HANGUP ----
-function hangup() {
-    try { pc && pc.close(); } catch(e){}
-    if(localStream) localStream.getTracks().forEach(tr=>tr.stop());
-    show('step1');
 }
 </script>
 </body>
